@@ -1,63 +1,53 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React from "react";
+import Emitter from "events";
+const EventEmitter = new Emitter();
 
-const StoreContext = createContext();
+EventEmitter.setMaxListeners(Number.MAX_SAFE_INTEGER);
 
-// Proxy handler to manage state interactions
 const proxyHandler = {
-  get(target, prop) {
-    return target[prop];
+  set: function (obj, prop, value) {
+    obj[prop] = value;
+    console.log(`I'm setting ${prop} to - `, value);
+    EventEmitter.emit("stateChange", { prop, value });
+    return true;
   },
-  set(target, prop, value) {
-    target[prop] = value;
-    target.listeners.forEach((listener) => listener(target));
-    return true; // Indicates success
+  get(target, prop) {
+    return Reflect.get(target, prop);
   },
 };
 
-// Function to create a new store
-function createStore(initialState) {
-  const store = {
-    state: initialState,
-    listeners: new Set(),
-    setState(newState) {
-      for (const key in newState) {
-        if (newState.hasOwnProperty(key)) {
-          store.state[key] = newState[key];
-        }
-      }
-    },
-    subscribe(listener) {
-      store.listeners.add(listener);
-      return () => store.listeners.delete(listener);
-    },
+export const createStore = (initObj) => {
+  const store = new Proxy(initObj, proxyHandler);
+
+  const subscribe = (callback) => {
+    EventEmitter.on("stateChange", callback);
+    return () => EventEmitter.removeListener("stateChange", callback);
   };
 
-  return new Proxy(store, proxyHandler);
-}
-
-// Provider component that sets up the store and provides it to the rest of the app
-export const StoreProvider = ({ children, initialState }) => {
-  const store = createStore(initialState);
-  return (
-    <StoreContext.Provider value={store}>{children}</StoreContext.Provider>
-  );
+  return { store, subscribe };
 };
 
-// Custom hook to use the store in components
-export function useStore(selector) {
-  const store = useContext(StoreContext);
-  const [selectedState, setSelectedState] = useState(() =>
-    selector(store.state),
-  );
+const { store, subscribe } = createStore({ count: 0 });
+export { store, subscribe };
 
-  useEffect(() => {
-    const listener = (newState) => {
-      const newSelectedState = selector(newState);
-      setSelectedState(newSelectedState);
-    };
-    store.subscribe(listener);
-    return () => store.unsubscribe(listener);
-  }, [store, selector]);
+export const useStoreState = (selector) => {
+  // Initialize local state with the value from the store using the selector
+  const [state, setState] = React.useState(selector(store));
 
-  return [selectedState, store.setState];
-}
+  React.useEffect(() => {
+    // Subscribe to store changes
+    const unsubscribe = subscribe(({ prop, value }) => {
+      // Use the selector to determine if the change is relevant for this hook
+      const selectedValue = selector({ [prop]: value });
+      // Update local state if the selected part of the store has changed
+      if (selectedValue !== state) {
+        setState(selectedValue);
+      }
+    });
+
+    // Cleanup subscription on component unmount
+    return () => unsubscribe();
+  }, [state, selector]);
+
+  return state;
+};

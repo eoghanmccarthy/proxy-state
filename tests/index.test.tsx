@@ -1,42 +1,37 @@
+/// <reference lib="dom" />
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/dom";
 import { expect, describe, it } from "bun:test";
 
-import { StoreProvider, useStore } from "../src";
+import { useStoreState, store } from "../src";
 
-// A test component that uses the useStore hook
-function TestComponent() {
-  const [state, setState] = useStore((state) => state);
+const ComponentA = () => {
+  const count = useStoreState((store) => store.count);
 
   return (
     <div>
-      <span data-testid="countValue">{state.count}</span>
-      <button onClick={() => setState({ count: state.count + 1 })}>
-        Increment
-      </button>
+      <span data-testid="countValue">{count}</span>
+      <button onClick={() => (store.count += 1)}>Add</button>
     </div>
   );
-}
+};
 
-describe("StoreProvider and useStore", () => {
+describe("StoreProvider and useStores", () => {
   it("renders with initial state and responds to state changes", () => {
-    const initialState = { count: 0 };
-
     render(
-      <StoreProvider initialState={initialState}>
-        <TestComponent />
-      </StoreProvider>,
+      <div>
+        <ComponentA />
+      </div>,
     );
 
-    // Check that the initial state is rendered
-    const countValue = screen.getByTestId("countValue");
-    expect(countValue).toHaveTextContent("0");
+    //Check that the initial state is rendered
+    expect(screen.getByTestId("countValue").textContent).toEqual("0");
 
     // Simulate a button click to increment the count
-    fireEvent.click(screen.getByText("Increment"));
+    fireEvent.click(screen.getByText("Add"));
 
     // Check that the state has been updated
-    expect(countValue).toHaveTextContent("1");
+    expect(screen.getByTestId("countValue").textContent).toEqual("1");
   });
 });
