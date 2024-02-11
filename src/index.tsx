@@ -6,9 +6,13 @@ EventEmitter.setMaxListeners(Number.MAX_SAFE_INTEGER);
 
 const proxyHandler = {
   set: function (obj, prop, value) {
-    obj[prop] = value;
     console.log(`I'm setting ${prop} to - `, value);
+    // obj[prop] = value;
+    // EventEmitter.emit("stateChange", { prop, value });
+    // return true;
+    const result = Reflect.set(obj, prop, value);
     EventEmitter.emit("stateChange", { prop, value });
+    // Additional logic (like emitting an event)
     return true;
   },
   get(target, prop) {
@@ -17,6 +21,8 @@ const proxyHandler = {
 };
 
 export const createStore = (initObj) => {
+  console.log("Creating store with initial state - ", initObj);
+
   const store = new Proxy(initObj, proxyHandler);
 
   const subscribe = (callback) => {
