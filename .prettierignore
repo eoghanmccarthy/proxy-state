@@ -1,0 +1,9 @@
+# Ignore artifacts:
+dist
+coverage
+node_modules
+public
+bun.lockb
+
+# Ignore all HTML files:
+*.html
