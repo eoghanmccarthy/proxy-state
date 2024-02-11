@@ -44,7 +44,7 @@ export const StoreProvider = ({ children, initialState }) => {
 };
 
 // Custom hook to use the store in components
-function useStore(selector) {
+export function useStore(selector) {
   const store = useContext(StoreContext);
   const [selectedState, setSelectedState] = useState(() =>
     selector(store.state),
