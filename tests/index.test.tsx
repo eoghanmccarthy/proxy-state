@@ -1,37 +1,46 @@
 /// <reference lib="dom" />
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import "@testing-library/dom";
 import { expect, describe, it } from "bun:test";
 
-import { useStoreState, store } from "../src";
+import { proxy, useProxy, useSnapshot } from "../src";
 
-const ComponentA = () => {
-  const count = useStoreState((store) => store.count);
+const countProxy = proxy({ count: 0 });
+
+const CounterButton = ({ testId }: { testId: string }) => {
+  const count = useProxy(countProxy);
 
   return (
-    <div>
-      <span data-testid="countValue">{count}</span>
-      <button onClick={() => (store.count += 1)}>Add</button>
-    </div>
+    <button data-testid={testId} onClick={() => ++count.count}>
+      {count.count}
+    </button>
   );
 };
 
-describe("StoreProvider and useStores", () => {
-  it("renders with initial state and responds to state changes", () => {
+describe("CounterButton useProxy interaction", () => {
+  it("increments count on click", () => {
     render(
       <div>
-        <ComponentA />
+        <CounterButton testId="btn1" />
+        <CounterButton testId="btn2" />
       </div>,
     );
 
-    //Check that the initial state is rendered
-    expect(screen.getByTestId("countValue").textContent).toEqual("0");
+    const button1 = screen.getByTestId("btn1");
+    const button2 = screen.getByTestId("btn2");
 
-    // Simulate a button click to increment the count
-    fireEvent.click(screen.getByText("Add"));
+    // Initial state check
+    expect(button1.textContent).toEqual("0");
+    expect(button2.textContent).toEqual("0");
 
-    // Check that the state has been updated
-    expect(screen.getByTestId("countValue").textContent).toEqual("1");
+    // Simulate click and check updated state
+    fireEvent.click(button1);
+    expect(button1.textContent).toEqual("1");
+    expect(button2.textContent).toEqual("1");
+
+    // Simulate click and check updated state
+    fireEvent.click(button2);
+    expect(button1.textContent).toEqual("2");
+    expect(button2.textContent).toEqual("2");
   });
 });

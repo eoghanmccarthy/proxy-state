@@ -1,59 +1,64 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Emitter from "events";
+import { v4 as uuidv4 } from "uuid";
+
 const EventEmitter = new Emitter();
 
 EventEmitter.setMaxListeners(Number.MAX_SAFE_INTEGER);
 
-const proxyHandler = {
-  set: function (obj, prop, value) {
-    console.log(`I'm setting ${prop} to - `, value);
-    // obj[prop] = value;
-    // EventEmitter.emit("stateChange", { prop, value });
-    // return true;
-    const result = Reflect.set(obj, prop, value);
-    EventEmitter.emit("stateChange", { prop, value });
-    // Additional logic (like emitting an event)
-    return true;
-  },
-  get(target, prop) {
-    return Reflect.get(target, prop);
-  },
+const generateUniqueEventName = () => {
+  return `proxyEvent_${uuidv4()}`;
 };
 
-export const createStore = (initObj) => {
-  console.log("Creating store with initial state - ", initObj);
+type ProxyState = Record<string, any>;
 
-  const store = new Proxy(initObj, proxyHandler);
+function invariant(key: string | symbol, action: string) {
+  if (key === "__PROXY__") {
+    throw new Error(`Invalid attempt to ${action} private "${key}" property`);
+  }
+}
 
-  const subscribe = (callback) => {
-    EventEmitter.on("stateChange", callback);
-    return () => EventEmitter.removeListener("stateChange", callback);
-  };
+export const proxy = (initialObject: Record<string, any>): ProxyState => {
+  const eventName = generateUniqueEventName();
 
-  return { store, subscribe };
-};
-
-const { store, subscribe } = createStore({ count: 0 });
-export { store, subscribe };
-
-export const useStoreState = (selector) => {
-  // Initialize local state with the value from the store using the selector
-  const [state, setState] = React.useState(selector(store));
-
-  React.useEffect(() => {
-    // Subscribe to store changes
-    const unsubscribe = subscribe(({ prop, value }) => {
-      // Use the selector to determine if the change is relevant for this hook
-      const selectedValue = selector({ [prop]: value });
-      // Update local state if the selected part of the store has changed
-      if (selectedValue !== state) {
-        setState(selectedValue);
-      }
-    });
-
-    // Cleanup subscription on component unmount
-    return () => unsubscribe();
-  }, [state, selector]);
+  const state = new Proxy(
+    { ...initialObject, __PROXY__: eventName },
+    {
+      defineProperty(target, prop, descriptor) {
+        invariant(prop, "define");
+        return Reflect.defineProperty(target, prop, descriptor);
+      },
+      set(target, prop, value) {
+        const result = Reflect.set(target, prop, value);
+        EventEmitter.emit(eventName, state);
+        return result;
+      },
+    },
+  );
 
   return state;
+};
+
+export const useSnapshot = (proxyObject: ProxyState) => {
+  const [snapshot, setSnapshot] = useState(proxyObject);
+
+  useEffect(() => {
+    const handler = (newState: ProxyState) => {
+      setSnapshot({ ...newState });
+    };
+
+    EventEmitter.on(proxyObject.__PROXY__, handler);
+
+    return () => {
+      EventEmitter.off(proxyObject.__PROXY__, handler);
+    };
+  }, [proxyObject]); // Re-subscribe only if the state object changes
+
+  return snapshot;
+};
+
+export const useProxy = (proxyObject: ProxyState) => {
+  const snap = useSnapshot(proxyObject);
+
+  return proxyObject;
 };
