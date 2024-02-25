@@ -46,7 +46,6 @@ export const useSnapshot = (proxyObject: ProxyState) => {
   const [snapshot, setSnapshot] = useState(proxyObject);
 
   useEffect(() => {
-    console.log("useEffect", proxyObject);
     const handler = (newState: ProxyState) => {
       setSnapshot({ ...newState });
     };
