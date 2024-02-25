@@ -6,6 +6,8 @@ const EventEmitter = new Emitter();
 
 EventEmitter.setMaxListeners(Number.MAX_SAFE_INTEGER);
 
+const privateKey = "__PROXY__";
+
 const generateUniqueEventName = () => {
   return `proxyEvent_${uuidv4()}`;
 };
@@ -13,7 +15,7 @@ const generateUniqueEventName = () => {
 type ProxyState = Record<string, any>;
 
 function invariant(key: string | symbol, action: string) {
-  if (key === "__PROXY__") {
+  if (key === privateKey) {
     throw new Error(`Invalid attempt to ${action} private "${key}" property`);
   }
 }
@@ -22,13 +24,14 @@ export const proxy = (initialObject: Record<string, any>): ProxyState => {
   const eventName = generateUniqueEventName();
 
   const state = new Proxy(
-    { ...initialObject, __PROXY__: eventName },
+    { ...initialObject, [privateKey]: eventName },
     {
       defineProperty(target, prop, descriptor) {
         invariant(prop, "define");
         return Reflect.defineProperty(target, prop, descriptor);
       },
       set(target, prop, value) {
+        invariant(prop, "set");
         const result = Reflect.set(target, prop, value);
         EventEmitter.emit(eventName, state);
         return result;
@@ -43,14 +46,15 @@ export const useSnapshot = (proxyObject: ProxyState) => {
   const [snapshot, setSnapshot] = useState(proxyObject);
 
   useEffect(() => {
+    console.log("useEffect", proxyObject);
     const handler = (newState: ProxyState) => {
       setSnapshot({ ...newState });
     };
 
-    EventEmitter.on(proxyObject.__PROXY__, handler);
+    EventEmitter.on(proxyObject[privateKey], handler);
 
     return () => {
-      EventEmitter.off(proxyObject.__PROXY__, handler);
+      EventEmitter.off(proxyObject[privateKey], handler);
     };
   }, [proxyObject]); // Re-subscribe only if the state object changes
 
