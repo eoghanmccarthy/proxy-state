@@ -1,67 +1,78 @@
-import React, { useEffect, useState } from "react";
-import Emitter from "events";
-import { v4 as uuidv4 } from "uuid";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 
-const EventEmitter = new Emitter();
-
-EventEmitter.setMaxListeners(Number.MAX_SAFE_INTEGER);
-
-const privateKey = "__PROXY__";
-
-const generateUniqueEventName = () => {
-  return `proxyEvent_${uuidv4()}`;
-};
-
-type ProxyState = Record<string, any>;
-
-function invariant(key: string | symbol, action: string) {
-  if (key === privateKey) {
-    throw new Error(`Invalid attempt to ${action} private "${key}" property`);
+const proxyStateMap = new WeakMap<
+  object,
+  {
+    target: object;
+    listeners: Set<() => void>;
   }
-}
+>();
 
-export const proxy = (initialObject: Record<string, any>): ProxyState => {
-  const eventName = generateUniqueEventName();
+export function proxy<T extends object>(initialObject: T): T {
+  // Validation
+  if (!initialObject || typeof initialObject !== "object") {
+    throw new Error("Proxy requires an object");
+  }
 
-  const state = new Proxy(
-    { ...initialObject, [privateKey]: eventName },
-    {
-      defineProperty(target, prop, descriptor) {
-        invariant(prop, "define");
-        return Reflect.defineProperty(target, prop, descriptor);
-      },
-      set(target, prop, value) {
-        invariant(prop, "set");
-        const result = Reflect.set(target, prop, value);
-        EventEmitter.emit(eventName, state);
-        return result;
-      },
+  // Don't create duplicate proxies
+  if (proxyStateMap.has(initialObject)) {
+    return initialObject as T;
+  }
+
+  const listeners = new Set<() => void>();
+
+  const state = new Proxy(initialObject, {
+    set(target, prop, value) {
+      const result = Reflect.set(target, prop, value);
+      listeners.forEach((listener) => listener());
+      return result;
     },
-  );
+    // Add deleteProperty to handle property deletions
+    deleteProperty(target, prop) {
+      const result = Reflect.deleteProperty(target, prop);
+      if (result) listeners.forEach((listener) => listener());
+      return result;
+    },
+  });
+
+  proxyStateMap.set(state, {
+    target: initialObject,
+    listeners,
+  });
 
   return state;
-};
+}
 
-export const useSnapshot = (proxyObject: ProxyState) => {
-  const [snapshot, setSnapshot] = useState(proxyObject);
+export const useProxy = <T extends object>(proxyObject: T): T => {
+  // Validate input
+  if (!proxyObject || !proxyStateMap.has(proxyObject)) {
+    throw new Error("useProxy requires a proxy object");
+  }
+
+  const [snapshot, setSnapshot] = useState<T>(proxyObject);
+
+  let isRendering = true;
+  useLayoutEffect(() => {
+    isRendering = false;
+  });
 
   useEffect(() => {
-    const handler = (newState: ProxyState) => {
-      setSnapshot({ ...newState });
+    const proxyState = proxyStateMap.get(proxyObject);
+    if (!proxyState) return;
+
+    const listener = () => {
+      setSnapshot({ ...proxyObject });
     };
 
-    EventEmitter.on(proxyObject[privateKey], handler);
-
+    proxyState.listeners.add(listener);
     return () => {
-      EventEmitter.off(proxyObject[privateKey], handler);
+      proxyState.listeners.delete(listener);
     };
-  }, [proxyObject]); // Re-subscribe only if the state object changes
+  }, [proxyObject]);
 
-  return snapshot;
-};
-
-export const useProxy = (proxyObject: ProxyState) => {
-  const snap = useSnapshot(proxyObject);
-
-  return proxyObject;
+  return new Proxy(proxyObject, {
+    get(target, prop) {
+      return isRendering ? snapshot[prop as keyof T] : target[prop as keyof T];
+    },
+  });
 };
