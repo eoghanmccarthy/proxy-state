@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 const proxyStateMap = new WeakMap<
   object,
@@ -9,7 +9,7 @@ const proxyStateMap = new WeakMap<
 >();
 
 export function proxy<T extends object>(initialObject: T): T {
-  // Validation
+  // Ensure we're working with a valid object
   if (!initialObject || typeof initialObject !== "object") {
     throw new Error("Proxy requires an object");
   }
@@ -19,6 +19,8 @@ export function proxy<T extends object>(initialObject: T): T {
     return initialObject as T;
   }
 
+  // Create a new Set to store listener callbacks
+  // These listeners will be called whenever the proxy state changes
   const listeners = new Set<() => void>();
 
   const state = new Proxy(initialObject, {
@@ -60,11 +62,16 @@ export const useProxy = <T extends object>(proxyObject: T): T => {
     const proxyState = proxyStateMap.get(proxyObject);
     if (!proxyState) return;
 
+    // Create a listener that updates the local snapshot
+    // when proxy state changes
     const listener = () => {
       setSnapshot({ ...proxyObject });
     };
 
+    // Register this component's listener
     proxyState.listeners.add(listener);
+
+    // Cleanup function to remove listener when component unmounts
     return () => {
       proxyState.listeners.delete(listener);
     };
@@ -72,6 +79,8 @@ export const useProxy = <T extends object>(proxyObject: T): T => {
 
   return new Proxy(proxyObject, {
     get(target, prop) {
+      // During render phase, read from snapshot to ensure consistency
+      // Otherwise, read from live target
       return isRendering ? snapshot[prop as keyof T] : target[prop as keyof T];
     },
   });
